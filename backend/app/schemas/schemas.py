@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class StoreOut(BaseModel):
@@ -13,7 +13,14 @@ class RailOut(BaseModel):
     store_id: int
     label: str
     length_cm: float
+    max_active_items: int | None  # NULL = 不限件数
+    active_count: int  # 当前 active 占位件数
     model_config = {"from_attributes": True}
+
+
+class RailUpdate(BaseModel):
+    # null 表示清除上限（不限件数）
+    max_active_items: int | None = Field(default=None, ge=1)
 
 
 class OrderOut(BaseModel):
@@ -49,4 +56,6 @@ class OccupancyOut(BaseModel):
     rail_id: int
     label: str
     length_cm: float
+    max_active_items: int | None
+    active_count: int
     segments: list[OccupancySeg]

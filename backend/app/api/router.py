@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -13,11 +13,31 @@ from app.schemas.schemas import (
     OrderOut,
     PickupRequest,
     RailOut,
+    RailUpdate,
     StoreOut,
 )
 from app.services.rail_engine import Segment, first_fit
 
 api_router = APIRouter()
+
+
+def _active_count(db: Session, rail_id: int) -> int:
+    return db.scalar(
+        select(func.count())
+        .select_from(RailPlacement)
+        .where(RailPlacement.rail_id == rail_id, RailPlacement.active == 1)
+    ) or 0
+
+
+def _rail_out(db: Session, rail: HangRail) -> RailOut:
+    return RailOut(
+        id=rail.id,
+        store_id=rail.store_id,
+        label=rail.label,
+        length_cm=rail.length_cm,
+        max_active_items=rail.max_active_items,
+        active_count=_active_count(db, rail.id),
+    )
 
 
 @api_router.get("/health")
@@ -32,7 +52,22 @@ def stores(db: Session = Depends(get_db)):
 
 @api_router.get("/rails", response_model=list[RailOut])
 def rails(db: Session = Depends(get_db)):
-    return db.scalars(select(HangRail).order_by(HangRail.id)).all()
+    rows = db.scalars(select(HangRail).order_by(HangRail.id)).all()
+    return [_rail_out(db, r) for r in rows]
+
+
+@api_router.patch("/rails/{rail_id}", response_model=RailOut)
+def update_rail(rail_id: int, body: RailUpdate, db: Session = Depends(get_db)):
+    rail = db.get(HangRail, rail_id)
+    if not rail:
+        raise HTTPException(404, "挂杆不存在")
+    current = _active_count(db, rail.id)
+    if body.max_active_items is not None and body.max_active_items < current:
+        raise HTTPException(400, f"上限不能小于当前已挂件数（当前 {current} 件）")
+    rail.max_active_items = body.max_active_items
+    db.commit()
+    db.refresh(rail)
+    return _rail_out(db, rail)
 
 
 @api_router.get("/orders", response_model=list[OrderOut])
@@ -63,7 +98,14 @@ def occupancy(rail_id: int, db: Session = Depends(get_db)):
             )
         )
     segs.sort(key=lambda s: s.start_cm)
-    return OccupancyOut(rail_id=rail.id, label=rail.label, length_cm=rail.length_cm, segments=segs)
+    return OccupancyOut(
+        rail_id=rail.id,
+        label=rail.label,
+        length_cm=rail.length_cm,
+        max_active_items=rail.max_active_items,
+        active_count=len(placements),
+        segments=segs,
+    )
 
 
 @api_router.post("/hang", response_model=OrderOut)
@@ -80,10 +122,15 @@ def hang(body: HangRequest, db: Session = Depends(get_db)):
     if not rails:
         raise HTTPException(404, "无可用挂杆")
 
+    hit_item_limit = False
     for rail in rails:
         active = db.scalars(
             select(RailPlacement).where(RailPlacement.rail_id == rail.id, RailPlacement.active == 1)
         ).all()
+        # 件数上限仅统计 active 占位；达到上限即使厘米够也跳过该杆
+        if rail.max_active_items is not None and len(active) >= rail.max_active_items:
+            hit_item_limit = True
+            continue
         occupied = [Segment(p.start_cm, p.end_cm) for p in active]
         place = first_fit(rail.length_cm, occupied, order.length_cm)
         if place is None:
@@ -102,6 +149,8 @@ def hang(body: HangRequest, db: Session = Depends(get_db)):
         db.refresh(order)
         return order
 
+    if hit_item_limit:
+        raise HTTPException(409, "挂杆件数已达上限")
     raise HTTPException(409, "挂杆空间不足")
 
 
