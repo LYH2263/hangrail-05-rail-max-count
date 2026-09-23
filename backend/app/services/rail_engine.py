@@ -34,8 +34,17 @@ def free_gaps(rail_length: float, occupied: list[Segment]) -> list[Segment]:
     return gaps
 
 
-def first_fit(rail_length: float, occupied: list[Segment], garment_cm: float) -> Placement | None:
+def first_fit(
+    rail_length: float,
+    occupied: list[Segment],
+    garment_cm: float,
+    active_items: int = 0,
+    max_items: int | None = None,
+) -> Placement | None:
     if garment_cm <= 0 or garment_cm > rail_length:
+        return None
+    # 仅统计 active 占位：达到件数上限时即使厘米够也不得再挂
+    if max_items is not None and active_items >= max_items:
         return None
     for gap in free_gaps(rail_length, occupied):
         if gap.length + 1e-9 >= garment_cm:

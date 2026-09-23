@@ -265,6 +265,8 @@ button {
   display: flex; justify-content: space-between;
   color: var(--hang-muted); font-size: .85rem; margin-bottom: .4rem;
 }
+.cap-count { color: var(--hang-muted); font-size: .78rem; }
+.cap-full { color: #ff9b7a; font-size: .78rem; font-weight: 700; }
 .ruler {
   position: relative; height: 52px;
   background: repeating-linear-gradient(

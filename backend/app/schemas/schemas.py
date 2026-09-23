@@ -1,5 +1,10 @@
 from datetime import datetime
-from pydantic import BaseModel
+from typing import Annotated
+
+from pydantic import BaseModel, Field
+
+# NULL 表示不限制件数；配置时必须为正整数
+OptionalMaxItems = Annotated[int | None, Field(default=None, ge=1)]
 
 
 class StoreOut(BaseModel):
@@ -13,7 +18,13 @@ class RailOut(BaseModel):
     store_id: int
     label: str
     length_cm: float
+    max_items: int | None = None
+    active_count: int = 0
     model_config = {"from_attributes": True}
+
+
+class RailUpdate(BaseModel):
+    max_items: OptionalMaxItems = None
 
 
 class OrderOut(BaseModel):
@@ -49,4 +60,6 @@ class OccupancyOut(BaseModel):
     rail_id: int
     label: str
     length_cm: float
+    max_items: int | None = None
+    active_count: int = 0
     segments: list[OccupancySeg]
